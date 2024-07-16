@@ -1,0 +1,121 @@
+---
+title : "Create Circos graph for CellPellet <> Supernatant Ligand-Receptor communication"
+Author: Maria Kondili
+Date: "03 May 2024"
+output:
+  html_document :
+    toc: true
+    highlight: tango
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+
+```{r}
+
+library(ggraph)
+library(igraph)
+library(tidyverse)
+library(RColorBrewer)
+library(circlize)
+library(viridis)
+library(gridBase)
+
+#library(chorddiag) # BiocManager::install("chorddiag")
+```
+
+
+#### Creating Groups (ie. Cell Types )
+
+Source: https://jokergoo.github.io/circlize_book/book/advanced-usage-of-chorddiagram.html 
+Figure : 15.12
+
+```{r}
+
+nichenet_LR <- read_delim("../CircLize/L-R_Supernat_vs_CellTypes_with_Score_Nichenet.txt",
+                          delim="\t",col_names=T)
+
+celltypes <- nichenet_LR$cell_type
+names(celltypes) <- nichenet_LR$Receptors
+
+LR_mat <- with(nichenet_LR, table(Ligands,Receptors))
+LR_mat %>% head 
+
+#!ATTENTION! : 
+# LR_mat -> colnames ="Receptors" ,but in Alphab.order, not as in "txt" !
+# This is why we ll Match Receptors names --> reorder according to txt names
+
+matched_ids <- match( names(celltypes),colnames(LR_mat) )
+##> change order of columns :
+LR_mat <- LR_mat[,matched_ids]
+
+
+groups <- structure( c(rep("Ligands",nrow(LR_mat)), celltypes ), 
+                     names= unlist(dimnames(LR_mat)) )
+
+
+bind_cols(groups, names(groups) ) %>% print(n= ncol(LR_mat)+nrow(LR_mat) )
+
+
+#--> the colour that the label-bars will get
+grid_col = structure(c(rep("darkorchid3", nrow(LR_mat)),
+                       rep("darkolivegreen",length(which(groups=="mu_proteome"))),   # cell-pellet 
+                       rep("orange2",length(which(groups=="Fibroblasts")) ),          # fibro
+                       rep("cadetblue",length(which(groups=="EC"))),                  # EC
+                       rep("brown1" ,length(which(groups=="Macrophages")))),          # macrophages
+                       names = unlist(dimnames(LR_mat)) )
+
+
+
+circos.par(canvas.ylim=c(-1,1), # edit  canvas size 
+           track.margin = c(0.01, 0.01)) # adjust bottom and top margin
+           
+chordDiagram(LR_mat,
+             transparency=0.5, 
+             big.gap = 10,
+             group=groups, 
+             grid.col=grid_col, #only for small-genes-boxes colour
+             annotationTrack = "grid",
+             annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             preAllocateTracks = list(
+               track.height=mm_h(3),
+               track.margin=c(mm_h(3),0)),
+             col=rand_color(length(LR_mat)) #-> colors of chords=random
+            )
+
+# + Arrows:  directional=1,  direction.type = "arrows",
+
+##> Add Receptors_Names in "Track"=2 ( internal circle)
+circos.track(track.index=2, panel.fun = function(x,y){ 
+               sector.index = get.cell.meta.data("sector.index")
+               xlim = get.cell.meta.data("xlim")
+               ylim = get.cell.meta.data("ylim")
+               circos.text(mean(xlim), mean(ylim), 
+                           sector.index, cex = 0.5,
+                           niceFacing = TRUE,col = "white")
+            }, bg.border = NA )
+
+
+highlight.sector(rownames(LR_mat), track.index = 1, col = "darkorchid3", 
+    text = "Ligands", cex = 0.8, lwd = 1.5, text.col = "white", niceFacing = TRUE)
+
+
+highlight.sector(colnames(LR_mat)[1:5], track.index = 1, col = "darkolivegreen", 
+    text = "MuscleProteome", cex = 0.8, lwd = 1.5,text.col = "white", niceFacing = TRUE)
+
+highlight.sector(colnames(LR_mat)[6:11], track.index = 1, col = "orange2", 
+    text ="Fibroblasts", cex = 0.8, lwd = 1.5, text.col = "white", niceFacing = TRUE)
+
+highlight.sector(colnames(LR_mat)[12:14], track.index = 1, col = "cadetblue", 
+    text = "Endothelials", cex = 0.8, lwd = 1.5, text.col = "white",  text.vjust = 0.5,
+    niceFacing = TRUE)
+
+highlight.sector(colnames(LR_mat)[15:17], track.index = 1, col = "brown1",
+    text = "Macrophages", cex = 0.8, lwd = 1.5, text.vjust = 0.5, text.col = "white", 
+    niceFacing = TRUE)
+
+
+circos.clear()
+
+```
