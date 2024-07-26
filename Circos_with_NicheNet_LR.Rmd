@@ -2,17 +2,28 @@
 title : "Create Circos graph for CellPellet <> Supernatant Ligand-Receptor communication"
 Author: Maria Kondili
 Date: "03 May 2024"
-output:
+output: 
   html_document :
-    toc: true
-    highlight: tango
-    df_print: paged
-editor_options:
+  toc: true
+linestretch: 1.3
+highlight: tango
+df_print: paged
+editor_options: 
   chunk_output_type: console
 ---
 
 
-```{r}
+```{r, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE,      # no code will be shown in html report
+                      eval = TRUE,
+                      fig.dim = c(10,8), # for larger space for a graph
+                      pillar.sigfig = 5)  # number of decimals to show from a tibble
+
+```
+
+
+```{r libs}
 
 library(ggraph)
 library(igraph)
@@ -21,101 +32,452 @@ library(RColorBrewer)
 library(circlize)
 library(viridis)
 library(gridBase)
-
-#library(chorddiag) # BiocManager::install("chorddiag")
+library(ComplexHeatmap)
+#library(chorddiag)  # BiocManager::install("chorddiag")| devtools::install_github("mattflor/chorddiag")
 ```
 
 
-#### Creating Groups (ie. Cell Types )
+```{r home_dir}
+
+#setwd("/shared/projects/secretome/Project_OPMD_DMD/NicheNet")
+work_dir <- "~/MYO_WORKSPACE/PROJECTS/Secretome/Secretome_DMD_OPMD/NicheNet/"
+
+```
+
+### Creating a table with strongest L-R interactions -> for Circos
+
+Extract the pairs of ligands-receptors from nichenet results
+
+```{r extract_strong_LR_function}
+
+extract_LR_for_circos <- function(nichenet_res_path, celltype, cutoff) {
+  
+  if ( str_ends(string = nichenet_res_path,pattern = ".xlsx") )
+    res_nn <- readxl::read_xlsx(nichenet_res_path, col_names = T)
+  else if (str_ends(nichenet_res_path, pattern =".txt|.tsv|.csv") ) {
+      res_nn <- read_delim(nichenet_res_path, delim="\t",col_names=TRUE,show_col_types = FALSE)
+  }
+  
+  res_nn <- as.data.frame(res_nn)
+
+  # rownames(res_nn) <- res_nn$ligands  #---> sometimes duplicate ligands,not possible rownames! 
+  # res_nn <- res_nn %>% dplyr::select(-"ligands")
+  # 
+  LR_df <- data.frame(Ligand = character(), 
+                      Receptor = character(), 
+                      Interact_value = numeric(), 
+                      stringsAsFactors = FALSE)  # Initialize an empty list to store results
+  
+  # Iterate through each row of the matrix
+  for (i in 1:nrow(res_nn)) {
+      # Find column indices where values exceed the cutoff in the current row
+      # res_nn[,-1] : to ignore the "ligands" column 
+      col_indices <- which(res_nn[i, -1 ] > cutoff)
+    
+      # If there are values above the cutoff in the current row
+      if (length(col_indices) > 0) {
+          for (j in col_indices) {
+              LR_df <- rbind(LR_df, data.frame(
+                             ligand =  res_nn$ligands[i],
+                             receptor = colnames(res_nn)[j+1], 
+                             interact_value  = res_nn[i, j+1],
+                             cell_type=celltype )
+                            )
+          }
+        # j+1 :to count for the ligands column that is not counted 
+    }
+  }
+  
+  return(LR_df)
+}
+
+```
+
+> Call function :: All-Supernatant -vs- All-CellPellet
+
+```{r all_vs_all_LRs_fun}
+
+cat("\n\n~~~> This run will be based on OPMD Ligands-Receptors Results !!!\n\n ")
+
+out_dir <- paste0(work_dir,"Outputs/OPMD/")
+
+all_vs_all_file <- paste0(out_dir,"Ligands_Receptors_table_All_Supernatant_vs_All_CellPellet_proteins.xlsx")
+
+LR_all_vs_all_df <- extract_LR_for_circos(all_vs_all_file, celltype="CellPellet", cutoff = 0.4) 
+  
+
+```
+
+> Call function :: All-Supernatant -vs- sc.Adipocytes 
+
+```{r all-vs-adipo_LRs_fun}
+
+all_vs_adipo_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scAdipocytes=Receptors.txt")
+
+LR_all_vs_adipo_df <- extract_LR_for_circos( all_vs_adipo_file, celltype="Adipocytes",cutoff = 0.4 ) 
+
+
+```
+
+> Call function :: All Supernatant -vs- sc.Fibroblasts 
+
+```{r all-vs-fibro_LRs_fun}
+
+all_vs_fibro_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scFibroblasts=Receptors.txt")
+
+LR_all_vs_fibro_df <- extract_LR_for_circos(all_vs_fibro_file, celltype="Fibroblasts", cutoff = 0.4 ) 
+
+```
+
+
+> Call function :: All Supernatant -vs- sc.Macrophages
+
+```{r all-vs-fibro_LRs_fun}
+
+all_vs_macroph_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scMacrophages=Receptors.txt")
+
+LR_all_vs_macroph_df <- extract_LR_for_circos(all_vs_macroph_file, celltype="Macrophages", cutoff = 0.4 ) 
+
+```
+
+### Merge All L-R pairs in one table
 
 Source: https://jokergoo.github.io/circlize_book/book/advanced-usage-of-chorddiagram.html 
-Figure : 15.12
+<br>
+(Figure : 15.12)
 
-```{r}
+```{r merge_LRs_tables}
 
-nichenet_LR <- read_delim("../CircLize/L-R_Supernat_vs_CellTypes_with_Score_Nichenet.txt",
-                          delim="\t",col_names=T)
+nichenet_LR <- dplyr::bind_rows(LR_all_vs_all_df ,
+                                LR_all_vs_adipo_df, 
+                                LR_all_vs_fibro_df,
+                                LR_all_vs_macroph_df  )
 
-celltypes <- nichenet_LR$cell_type
-names(celltypes) <- nichenet_LR$Receptors
+## Choose the 4 strongest LR-interactions per pair/cell-type:
 
-LR_mat <- with(nichenet_LR, table(Ligands,Receptors))
-LR_mat %>% head 
+keep_top10_highInteractions_LR <- function(LR_df) {
+  
+    maxI_LR <- LR_df[order(LR_df$interact_value, decreasing = T),][1:15,] 
+    ## remove one line of the ligand being also a receptor
+    if ( any(maxI_LR$ligand %in% maxI_LR$receptor)) { 
+        to_rmv <- which(maxI_LR$ligand %in% maxI_LR$receptor)
+        # All pairs removed ! BUT: have to keep the pair once ...! 
+        maxI_LR <- maxI_LR[-to_rmv,]
+      }
+    return(maxI_LR)
+}
 
-#!ATTENTION! : 
-# LR_mat -> colnames ="Receptors" ,but in Alphab.order, not as in "txt" !
-# This is why we ll Match Receptors names --> reorder according to txt names
+##> apply function for each data.frame of LR
+maxI_LR_list <- map(list("cp"=LR_all_vs_all_df ,
+                         "adipo"=LR_all_vs_adipo_df,
+                         "fibro"=LR_all_vs_fibro_df,
+                         "macroph"=LR_all_vs_macroph_df),
+                  ~keep_top10_highInteractions_LR(.x))
 
-matched_ids <- match( names(celltypes),colnames(LR_mat) )
-##> change order of columns :
+
+mini_nn_LR <- dplyr::bind_rows(maxI_LR_list)
+
+print(mini_nn_LR)
+```
+
+
+```{r filter_Ligands_ovl_Receptors }
+
+## Remove again Receptors that are also Ligands, from different cell-types
+## (not seen in the function)
+
+to_rmv <- which( mini_nn_LR$receptor %in% mini_nn_LR$ligand )
+mini_nn_LR <- mini_nn_LR[ -to_rmv, ]
+
+
+## Verify that Receptors are unique : 
+mini_nn_LR <- mini_nn_LR[-which(duplicated(mini_nn_LR$receptor)),]
+
+mini_nn_LR
+
+celltypes <- mini_nn_LR$cell_type
+names(celltypes) <- mini_nn_LR$receptor
+
+
+## Create table of frequency of an interaction of Ligand with a Receptor 
+LR_mat <- with(mini_nn_LR , table(ligand,receptor))
+
+
+#!ATTENTION!
+# LR_mat -> colnames ="Receptors" are in Alphab.order, not as in data.frame !
+# This is why we 'll Match Receptors names --> reorder according to data.frame
+matched_ids <- match( mini_nn_LR$receptor, colnames(LR_mat) )
+# 
+# ##> change order of columns :
 LR_mat <- LR_mat[,matched_ids]
 
-
-groups <- structure( c(rep("Ligands",nrow(LR_mat)), celltypes ), 
-                     names= unlist(dimnames(LR_mat)) )
-
-
-bind_cols(groups, names(groups) ) %>% print(n= ncol(LR_mat)+nrow(LR_mat) )
+cat("\nNow LR_mat has columns with same order as mini_nn_LR.\n")
+colnames(LR_mat)
+mini_nn_LR$receptor
+```
 
 
-#--> the colour that the label-bars will get
-grid_col = structure(c(rep("darkorchid3", nrow(LR_mat)),
-                       rep("darkolivegreen",length(which(groups=="mu_proteome"))),   # cell-pellet 
-                       rep("orange2",length(which(groups=="Fibroblasts")) ),          # fibro
-                       rep("cadetblue",length(which(groups=="EC"))),                  # EC
-                       rep("brown1" ,length(which(groups=="Macrophages")))),          # macrophages
-                       names = unlist(dimnames(LR_mat)) )
+```{r prep_circos_info }
+
+groups <- structure( c( rep("Ligands", nrow(LR_mat)), 
+                        celltypes ), 
+                    names = unlist(dimnames(LR_mat)) )
+
+groups_df <- data.frame( "groups" = groups )
+print(groups_df)
+
+glue::glue("\nThe data contain {length(celltypes)}  receptors from different sources." )
+glue::glue("\n...and {nrow(LR_mat)} ligands" )
+glue::glue("..giving a total of {length(celltypes) + nrow(LR_mat)} features to participate in the Circos Plot." )
 
 
+cells_groups <- levels(as.factor(celltypes))
+#bind_cols(groups, names(groups) ) %>% print(n= ncol(LR_mat)+nrow(LR_mat) )
+cells_groups
 
-circos.par(canvas.ylim=c(-1,1), # edit  canvas size 
+
+### 
+### The colour that the label-bars will get
+###
+
+
+#(ATTENTION : Add as many colours as cells_groups )
+
+groups_df <- groups_df %>% mutate("grid_colour"= c(rep("darkorchid3", length(which(groups =="Ligands"))), 
+                                                  rep("chocolate4",length(which(groups == "cell_pellet" ))),    
+                                                  rep("orange2",length(which(groups == "adipocytes" ))),          
+                                                  rep("aquamarine3",length(which(groups == "macrophages" ))))
+)
+
+print(groups_df)
+
+grid_col <- groups_df$grid_colour
+names(grid_col) <- rownames(groups_df)
+
+```
+
+### Circos 1 :: Classic Chords with random colours (based on frequency of interaction ={0,1})
+
+```{r create_circos }
+
+cat("\nNumber of ligands & Receptors is equal the number of colours given to each: \n")
+length(unlist(dimnames(LR_mat))) == length(groups_df$grid_colour)
+
+circos.clear()
+circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
            track.margin = c(0.01, 0.01)) # adjust bottom and top margin
-           
+
+
+##> Chords with Random Colours
 chordDiagram(LR_mat,
-             transparency=0.5, 
+             transparency=0.5,
              big.gap = 10,
-             group=groups, 
-             grid.col=grid_col, #only for small-genes-boxes colour
+             group = groups,
+             grid.col = grid_col, #only for small-genes-boxes colour
              annotationTrack = "grid",
              annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             link.target.prop = TRUE,
              preAllocateTracks = list(
-               track.height=mm_h(3),
-               track.margin=c(mm_h(3),0)),
-             col=rand_color(length(LR_mat)) #-> colors of chords=random
-            )
+                track.height = mm_h(3),
+                track.margin = c(mm_h(3),0)),
+                col=rand_color(length(LR_mat)) ) #-> colors of chords=random,
+                                                 #  length(LR_mat) = number of all L,R.
 
 # + Arrows:  directional=1,  direction.type = "arrows",
 
 ##> Add Receptors_Names in "Track"=2 ( internal circle)
-circos.track(track.index=2, panel.fun = function(x,y){ 
+circos.track(track.index=2, panel.fun = function(x,y) { 
                sector.index = get.cell.meta.data("sector.index")
                xlim = get.cell.meta.data("xlim")
                ylim = get.cell.meta.data("ylim")
                circos.text(mean(xlim), mean(ylim), 
-                           sector.index, cex = 0.5,
+                           sector.index, cex = 0.4,
                            niceFacing = TRUE,col = "white")
             }, bg.border = NA )
 
 
-highlight.sector(rownames(LR_mat), track.index = 1, col = "darkorchid3", 
-    text = "Ligands", cex = 0.8, lwd = 1.5, text.col = "white", niceFacing = TRUE)
+
+### 2nd Layer of Labels :: Cell-types (Source of genes )
 
 
-highlight.sector(colnames(LR_mat)[1:5], track.index = 1, col = "darkolivegreen", 
-    text = "MuscleProteome", cex = 0.8, lwd = 1.5,text.col = "white", niceFacing = TRUE)
+# Ligands layer
+highlight.sector(rownames(LR_mat), track.index = 1, col = unique(groups_df$grid_colour)[1], 
+    text = unique(groups_df$groups)[1], cex = 0.8, lwd = 1.5, text.col = "white", niceFacing = TRUE)
 
-highlight.sector(colnames(LR_mat)[6:11], track.index = 1, col = "orange2", 
-    text ="Fibroblasts", cex = 0.8, lwd = 1.5, text.col = "white", niceFacing = TRUE)
 
-highlight.sector(colnames(LR_mat)[12:14], track.index = 1, col = "cadetblue", 
-    text = "Endothelials", cex = 0.8, lwd = 1.5, text.col = "white",  text.vjust = 0.5,
-    niceFacing = TRUE)
+# CellPellet
+highlight.sector(colnames(LR_mat)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[2] )], #cell_group[1]
+                 track.index = 1, col = unique(groups_df$grid_colour)[2], 
+                 text =unique(groups_df$groups)[2] , cex = 0.8, lwd = 1.5,
+                 text.col = "white", niceFacing = TRUE )
 
-highlight.sector(colnames(LR_mat)[15:17], track.index = 1, col = "brown1",
-    text = "Macrophages", cex = 0.8, lwd = 1.5, text.vjust = 0.5, text.col = "white", 
-    niceFacing = TRUE)
+# Adipocytes
+highlight.sector(colnames(LR_mat)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[3])], #cell_group[2]
+                 track.index = 1, col = unique(groups_df$grid_colour)[3] , 
+                 text = unique(groups_df$groups)[3] , cex = 0.8, lwd = 1.5, 
+                 text.col = "white", niceFacing = TRUE)
 
+
+# Macrophages
+highlight.sector(colnames(LR_mat)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[4])],   #cell_group[3]
+                 track.index = 1, col = unique(groups_df$grid_colour)[4], 
+                 text = unique(groups_df$groups)[4], cex = 0.8, lwd = 1.5, 
+                 text.col = "white",  text.vjust = 0.5,niceFacing = TRUE )
+
+
+```
+
+### Circos 2 :: Chords colored according to Interaction Value Intensity (from nichenet)
+
+NOTE: LR_mat must contain the interaction value in each cell, instead of the {0,1}
+
+```{r prepare_LR_mat_with_Interaction }
+
+
+
+
+##
+## Create table of Interactions of Ligands with Receptors 
+##
+
+#instead of : LR_mat <- with(mini_nn_LR , table(ligand,receptor))
+#! Attention: Must remove "cell_type" column ,so that ligands with multiple receptors are merged in 1 line
+
+LR_mat.i <- mini_nn_LR %>% dplyr::select(-c("cell_type")) %>% 
+                            tidyr::pivot_wider(names_from = receptor, 
+                                               values_from="interact_value",
+                                               values_fill = 0)
+## Remove "ligand" column -> keep as rownames
+LR_mat.i <- as.data.frame(LR_mat.i)
+rownames(LR_mat.i) <- LR_mat.i$ligand
+LR_mat.i <- LR_mat.i %>% dplyr::select(-"ligand")
+
+```
+
+
+```{r create_circos_2 }
 
 circos.clear()
+
+circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
+           track.margin = c(0.01, 0.01)) # adjust bottom and top margin
+
+
+col_values <- c(round(min(mini_nn_LR$interact_value),1), 
+                round(max(mini_nn_LR$interact_value),1) )
+
+col_fun <- circlize::colorRamp2(col_values, c("blue", "red"))
+
+LR_mat.i <- as.matrix(LR_mat.i) 
+
+chordDiagram(LR_mat.i,
+             transparency=0.5,
+             big.gap = 10,
+             group = groups,
+             grid.col = grid_col,        #only for small-genes-boxes colour
+             annotationTrack = "grid",
+             annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             link.target.prop = TRUE,
+             directional=1,         #shows little bars on Ligands showing to which R is connected
+             preAllocateTracks = list(
+                                track.height = mm_h(3),
+                                track.margin = c(mm_h(3),0)),
+             col=function(x) col_fun(x)) 
+            
+
+
+```
+
+
+```{r add_legend }
+###
+### Add Legend and Colour intensity according to Interaction Value of L-Rs
+###
+
+#> Doc : https://jokergoo.github.io/ComplexHeatmap-reference/book/legends.html
+
+
+## Add a Legend for the color-variability of chords 
+lgd <- ComplexHeatmap::Legend(at=col_values,
+                              col_fun = col_fun, 
+                              title = "Interaction")
+
+ComplexHeatmap::draw(lgd, x = unit(1, "cm"), y = unit(0, "cm"),just=c("left","bottom") )
+
+
+
+##> Add Receptors_Names in "Track"=2 ( internal circle)
+circos.track(track.index=2, panel.fun = function(x,y) { 
+               sector.index = get.cell.meta.data("sector.index")
+               xlim = get.cell.meta.data("xlim")
+               ylim = get.cell.meta.data("ylim")
+               circos.text(mean(xlim), mean(ylim), 
+                           sector.index, cex = 0.6,
+                           niceFacing = TRUE,col = "white")
+            }, bg.border = NA )
+```
+
+
+```{r add_2nd_layer_circos2}
+###
+### 2nd Layer of Labels :: Cell-types (Source of genes )
+###
+
+## Parameters to change : 
+## 1. col = unique(groups_df$grid_colour)[1] -> [2], [3],[4] according to nb.of cell-types
+## 2. text = unique(groups_df$groups)[1] & sector.index = [which(mini_nn_LR$cell_type ==...]
+
+
+# Ligands layer
+highlight.sector(rownames(LR_mat.i),
+                 track.index = 1, 
+                 col = unique(groups_df$grid_colour)[1], 
+                 text = unique(groups_df$groups)[1], 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+
+# CellPellet
+highlight.sector(colnames(LR_mat.i)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[2] )], #cell_group[1]
+                 track.index = 1, 
+                 col = unique(groups_df$grid_colour)[2], 
+                 text = unique(groups_df$groups)[2] , 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+# Adipocytes
+highlight.sector(colnames(LR_mat.i)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[3])], #cell_group[2]
+                 track.index = 1, 
+                 col = unique(groups_df$grid_colour)[3] , 
+                 text = unique(groups_df$groups)[3], 
+                 cex = 0.8, lwd = 1.5, 
+                 text.col = "white", 
+                 niceFacing = TRUE)
+
+
+# Macrophages
+highlight.sector(colnames(LR_mat.i)[which(mini_nn_LR$cell_type == unique(groups_df$groups)[4])],   #cell_group[3]
+                 track.index = 1, 
+                 col = unique(groups_df$grid_colour)[4], 
+                 text = unique(groups_df$groups)[4], 
+                 cex = 0.8, lwd = 1.5, 
+                 text.col = "white",  
+                 text.vjust = 0.5,
+                 niceFacing = TRUE )
+```
+
+
+```{r clear }
+
+circos.clear()
+
+
+```
+
+```{r session_info}
+
+sessionInfo()
 
 ```
