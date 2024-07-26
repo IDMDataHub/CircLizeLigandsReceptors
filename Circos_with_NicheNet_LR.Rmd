@@ -2,6 +2,9 @@
 title : "Create Circos graph for CellPellet <> Supernatant Ligand-Receptor communication"
 Author: Maria Kondili
 Date: "03 May 2024"
+header-includes:
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines=TRUE,commandchars=\\\{\}}
 output: 
   html_document :
   toc: true
@@ -25,14 +28,14 @@ knitr::opts_chunk$set(echo = TRUE,      # no code will be shown in html report
 
 ```{r libs}
 
-library(ggraph)
-library(igraph)
-library(tidyverse)
+suppressPackageStartupMessages(library(ggraph))
+suppressPackageStartupMessages(library(igraph))
+suppressPackageStartupMessages(library(tidyverse))
 library(RColorBrewer)
-library(circlize)
-library(viridis)
+suppressPackageStartupMessages(library(circlize))
+suppressPackageStartupMessages(library(viridis))
 library(gridBase)
-library(ComplexHeatmap)
+suppressPackageStartupMessages(library(ComplexHeatmap))
 #library(chorddiag)  # BiocManager::install("chorddiag")| devtools::install_github("mattflor/chorddiag")
 ```
 
@@ -103,6 +106,8 @@ out_dir <- paste0(work_dir,"Outputs/OPMD/")
 
 all_vs_all_file <- paste0(out_dir,"Ligands_Receptors_table_All_Supernatant_vs_All_CellPellet_proteins.xlsx")
 
+cat("\nFile to be read :Ligands_Receptors_table_All_Supernatant_vs_All_CellPellet_proteins.xlsx ")
+
 LR_all_vs_all_df <- extract_LR_for_circos(all_vs_all_file, celltype="CellPellet", cutoff = 0.4) 
   
 
@@ -113,6 +118,8 @@ LR_all_vs_all_df <- extract_LR_for_circos(all_vs_all_file, celltype="CellPellet"
 ```{r all-vs-adipo_LRs_fun}
 
 all_vs_adipo_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scAdipocytes=Receptors.txt")
+
+cat("\nFile to be read :Table_All_Supernatant=Ligands_vs_scAdipocytes=Receptors.txt")
 
 LR_all_vs_adipo_df <- extract_LR_for_circos( all_vs_adipo_file, celltype="Adipocytes",cutoff = 0.4 ) 
 
@@ -125,6 +132,8 @@ LR_all_vs_adipo_df <- extract_LR_for_circos( all_vs_adipo_file, celltype="Adipoc
 
 all_vs_fibro_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scFibroblasts=Receptors.txt")
 
+cat("\nFile to be read :Table_All_Supernatant=Ligands_vs_scFibroblasts=Receptors.txt")
+
 LR_all_vs_fibro_df <- extract_LR_for_circos(all_vs_fibro_file, celltype="Fibroblasts", cutoff = 0.4 ) 
 
 ```
@@ -132,9 +141,11 @@ LR_all_vs_fibro_df <- extract_LR_for_circos(all_vs_fibro_file, celltype="Fibrobl
 
 > Call function :: All Supernatant -vs- sc.Macrophages
 
-```{r all-vs-fibro_LRs_fun}
+```{r all-vs-macro_LRs_fun}
 
 all_vs_macroph_file <- paste0(out_dir,"Table_All_Supernatant=Ligands_vs_scMacrophages=Receptors.txt")
+
+cat("\nFile to be read :Table_All_Supernatant=Ligands_vs_scMacrophages=Receptors.txt")
 
 LR_all_vs_macroph_df <- extract_LR_for_circos(all_vs_macroph_file, celltype="Macrophages", cutoff = 0.4 ) 
 
@@ -145,6 +156,12 @@ LR_all_vs_macroph_df <- extract_LR_for_circos(all_vs_macroph_file, celltype="Mac
 Source: https://jokergoo.github.io/circlize_book/book/advanced-usage-of-chorddiagram.html 
 <br>
 (Figure : 15.12)
+
+cat("\n~~~NOTE~~~")
+cat("\nIn order to have a medium number of Ligands-Receptors to visualise,\n
+    the LR pairs are sorted in decreasing order of interaction value,\n
+    and the top 15 strongest will be taken from each NicheNet table.")
+
 
 ```{r merge_LRs_tables}
 
@@ -180,20 +197,27 @@ mini_nn_LR <- dplyr::bind_rows(maxI_LR_list)
 print(mini_nn_LR)
 ```
 
+Remove again Receptors that are also Ligands, from different cell-types
+(not seen in the function)
 
 ```{r filter_Ligands_ovl_Receptors }
 
-## Remove again Receptors that are also Ligands, from different cell-types
-## (not seen in the function)
-
 to_rmv <- which( mini_nn_LR$receptor %in% mini_nn_LR$ligand )
 mini_nn_LR <- mini_nn_LR[ -to_rmv, ]
+```
 
+Verify that Receptors are unique :
 
-## Verify that Receptors are unique : 
+```{r unique_receptors }
+
 mini_nn_LR <- mini_nn_LR[-which(duplicated(mini_nn_LR$receptor)),]
 
 mini_nn_LR
+```
+
+Create table of Adjacency Ligands-Receptors 
+
+```{r  define_cell_types_and_LR_mat }
 
 celltypes <- mini_nn_LR$cell_type
 names(celltypes) <- mini_nn_LR$receptor
@@ -211,11 +235,12 @@ matched_ids <- match( mini_nn_LR$receptor, colnames(LR_mat) )
 # ##> change order of columns :
 LR_mat <- LR_mat[,matched_ids]
 
-cat("\nNow LR_mat has columns with same order as mini_nn_LR.\n")
-colnames(LR_mat)
-mini_nn_LR$receptor
+#cat("\nNow LR_mat has columns with same order as mini_nn_LR.\n")
+#colnames(LR_mat)
+#mini_nn_LR$receptor
 ```
 
+Assign Genes to Cell-types Groups
 
 ```{r prep_circos_info }
 
@@ -226,7 +251,7 @@ groups <- structure( c( rep("Ligands", nrow(LR_mat)),
 groups_df <- data.frame( "groups" = groups )
 print(groups_df)
 
-glue::glue("\nThe data contain {length(celltypes)}  receptors from different sources." )
+glue::glue("\nThe data contain {length(celltypes)}  receptors from different sources," )
 glue::glue("\n...and {nrow(LR_mat)} ligands" )
 glue::glue("..giving a total of {length(celltypes) + nrow(LR_mat)} features to participate in the Circos Plot." )
 
@@ -235,18 +260,19 @@ cells_groups <- levels(as.factor(celltypes))
 #bind_cols(groups, names(groups) ) %>% print(n= ncol(LR_mat)+nrow(LR_mat) )
 cells_groups
 
+```
 
-### 
-### The colour that the label-bars will get
-###
+Define the colours that the label-bars will get
+
+```{r prep_colour_labels}
 
 
 #(ATTENTION : Add as many colours as cells_groups )
 
 groups_df <- groups_df %>% mutate("grid_colour"= c(rep("darkorchid3", length(which(groups =="Ligands"))), 
-                                                  rep("chocolate4",length(which(groups == "cell_pellet" ))),    
-                                                  rep("orange2",length(which(groups == "adipocytes" ))),          
-                                                  rep("aquamarine3",length(which(groups == "macrophages" ))))
+                                                  rep("chocolate4",length(which(groups == "CellPellet" ))),    
+                                                  rep("orange2",length(which(groups == "Adipocytes" ))),          
+                                                  rep("aquamarine3",length(which(groups == "Macrophages" ))))
 )
 
 print(groups_df)
@@ -331,14 +357,9 @@ highlight.sector(colnames(LR_mat)[which(mini_nn_LR$cell_type == unique(groups_df
 
 NOTE: LR_mat must contain the interaction value in each cell, instead of the {0,1}
 
+#### Create table of Interactions of Ligands with Receptors 
+
 ```{r prepare_LR_mat_with_Interaction }
-
-
-
-
-##
-## Create table of Interactions of Ligands with Receptors 
-##
 
 #instead of : LR_mat <- with(mini_nn_LR , table(ligand,receptor))
 #! Attention: Must remove "cell_type" column ,so that ligands with multiple receptors are merged in 1 line
@@ -352,12 +373,14 @@ LR_mat.i <- as.data.frame(LR_mat.i)
 rownames(LR_mat.i) <- LR_mat.i$ligand
 LR_mat.i <- LR_mat.i %>% dplyr::select(-"ligand")
 
+print(LR_mat.i)
+
 ```
 
+#### Create ChordDiagram
 
 ```{r create_circos_2 }
 
-circos.clear()
 
 circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
            track.margin = c(0.01, 0.01)) # adjust bottom and top margin
@@ -388,14 +411,12 @@ chordDiagram(LR_mat.i,
 
 ```
 
-
-```{r add_legend }
-###
-### Add Legend and Colour intensity according to Interaction Value of L-Rs
-###
+#### Add Legend and Colour intensity according to Interaction Value of L-Rs
 
 #> Doc : https://jokergoo.github.io/ComplexHeatmap-reference/book/legends.html
 
+
+```{r add_legend }
 
 ## Add a Legend for the color-variability of chords 
 lgd <- ComplexHeatmap::Legend(at=col_values,
@@ -404,7 +425,7 @@ lgd <- ComplexHeatmap::Legend(at=col_values,
 
 ComplexHeatmap::draw(lgd, x = unit(1, "cm"), y = unit(0, "cm"),just=c("left","bottom") )
 
-
+cat("\n\n\n~~>Legend shows colour-code of chords according to Interaction Value: blue = min, red = max ")
 
 ##> Add Receptors_Names in "Track"=2 ( internal circle)
 circos.track(track.index=2, panel.fun = function(x,y) { 
@@ -415,10 +436,7 @@ circos.track(track.index=2, panel.fun = function(x,y) {
                            sector.index, cex = 0.6,
                            niceFacing = TRUE,col = "white")
             }, bg.border = NA )
-```
 
-
-```{r add_2nd_layer_circos2}
 ###
 ### 2nd Layer of Labels :: Cell-types (Source of genes )
 ###
