@@ -437,9 +437,8 @@ circos.track(track.index=2, panel.fun = function(x,y) {
                            niceFacing = TRUE,col = "white")
             }, bg.border = NA )
 
-###
+
 ### 2nd Layer of Labels :: Cell-types (Source of genes )
-###
 
 ## Parameters to change : 
 ## 1. col = unique(groups_df$grid_colour)[1] -> [2], [3],[4] according to nb.of cell-types
@@ -484,13 +483,438 @@ highlight.sector(colnames(LR_mat.i)[which(mini_nn_LR$cell_type == unique(groups_
                  text.col = "white",  
                  text.vjust = 0.5,
                  niceFacing = TRUE )
-```
 
-
-```{r clear }
 
 circos.clear()
 
+```
+
+### Create ChordDiagram B' : only with Ligands and Cell-Pellet (10/10/24)
+
+```{r nichenet_LR_for_cellpellet, eval=F}
+
+#nichenet.cp <- nichenet_LR %>% subset(cell_type=="CellPellet")
+
+mini_nn_LR.cp <- mini_nn_LR %>% subset(cell_type=="CellPellet")
+
+cp_celltype <- mini_nn_LR.cp$cell_type
+names(cp_celltype) <- mini_nn_LR.cp$receptor
+
+
+## Create table of frequency of an interaction of Ligand with a Receptor 
+LR_mat.cp <- with(mini_nn_LR.cp, table(ligand,receptor))
+
+print(LR_mat.cp)
+
+#!ATTENTION!
+# LR_mat -> colnames ="Receptors" are in Alphab.order, not as in data.frame !
+# This is why we 'll Match Receptors names --> reorder according to data.frame
+matched_ids <- match( mini_nn_LR.cp$receptor, colnames(LR_mat.cp) )
+
+# ##> change order of columns :
+LR_mat.cp <- LR_mat.cp[,matched_ids]
+groups_df.cp <- subset(groups_df, groups %in% c("Ligands","CellPellet"))
+
+
+groups_df.cp <- groups_df.cp %>% 
+                mutate("grid_colour"= c(rep("darkorchid3", length(which(groups=="Ligands"))), 
+                                        rep("darkslategray",length(which(groups == "CellPellet")))   
+                                      ))
+
+
+
+grid_col.cp <- groups_df.cp$grid_colour
+names(grid_col.cp) <- rownames(groups_df.cp)
+
+```
+
+
+```{r circos_only_with_cellpellet_graph, eval=F}
+
+circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
+           track.margin = c(0.01, 0.01)) # adjust bottom and top margin
+
+
+col_values.cp <- c(round(min(mini_nn_LR.cp$interact_value),1), 
+                round(max(mini_nn_LR.cp$interact_value),1) )
+
+col_fun <- circlize::colorRamp2(col_values.cp, c("blue", "red"))
+
+glue::glue("\n\n~~> Colours will be set on following values of Interaction :min={col_values[1]}, max={col_values[2]}")
+
+
+chordDiagram(LR_mat.cp,
+             transparency=0.5,
+             big.gap = 10,
+             group = groups,
+             grid.col = grid_col.cp,        #only for small-genes-boxes colour
+             annotationTrack = "grid",
+             annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             link.target.prop = TRUE,
+             directional=1,         #shows little bars on Ligands showing to which R is connected
+             preAllocateTracks = list(
+                                track.height = mm_h(3),
+                                track.margin = c(mm_h(3),0)),
+             col=function(x) col_fun(x)) 
+            
+
+#### Add Legend and Colour intensity according to Interaction Value of L-Rs
+
+#> Doc : https://jokergoo.github.io/ComplexHeatmap-reference/book/legends.html
+
+
+## Add a Legend for the color-variability of chords 
+lgd <- ComplexHeatmap::Legend(at=col_values.cp,
+                              col_fun = col_fun, 
+                              title = "Interaction")
+
+ComplexHeatmap::draw(lgd, x = unit(1, "cm"), y = unit(0, "cm"),just=c("left","bottom") )
+
+cat("\n\n\n~~>Legend shows colour-code of chords according to Interaction Value: blue = min, red = max ")
+
+
+##> Add Receptors_Names in "Track"=2 ( internal circle)
+circos.track(track.index=2, panel.fun = function(x,y) { 
+               sector.index = get.cell.meta.data("sector.index")
+               xlim = get.cell.meta.data("xlim")
+               ylim = get.cell.meta.data("ylim")
+               circos.text(mean(xlim), mean(ylim), 
+                           sector.index, cex = 0.6,
+                           niceFacing = TRUE,col = "white")
+            }, bg.border = NA )
+
+
+#### 2nd Layer of Labels :: Cell-types (Source of genes )
+
+
+# Ligands layer
+highlight.sector(rownames(LR_mat.cp),
+                 track.index = 1, 
+                 col = unique(groups_df.cp$grid_colour)[1], 
+                 text = unique(groups_df.cp$groups)[1], 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+
+# CellPellet
+highlight.sector(colnames(LR_mat.cp)[which(mini_nn_LR.cp$cell_type == unique(groups_df.cp$groups)[2])], #cell_group[1]
+                 track.index = 1, 
+                 col = unique(groups_df.cp$grid_colour)[2], 
+                 text = unique(groups_df.cp$groups)[2] , 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+```
+
+### Create ChordDiagram C' : only with POI-Ligands-OPMD and All Cell-Pellet (updated October 2024)
+
+```{r nichenet_LR_poi_Ligands}
+
+poi_sn_vs_all_cp_file <- paste0(out_dir,"Table_POI_Supernatant=Ligands_vs_All_CellPellet=Receptors.xlsx")
+glue::glue("\nFile to be read : {basename(poi_sn_vs_all_cp_file)}")
+
+LR_poiSN_vs_CP_df <- extract_LR_for_circos(poi_sn_vs_all_cp_file, celltype="CellPellet", cutoff=0.3 ) 
+LR_poiSN_vs_CP_df %>% head
+
+```
+
+
+```{r prepare_LR_mat_poi_Supernat_ligands}
+
+to_rmv <- which( LR_poiSN_vs_CP_df$receptor %in% LR_poiSN_vs_CP_df$ligand )
+to_rmv
+
+LR_poiSN_vs_CP_df  <- LR_poiSN_vs_CP_df[-which(duplicated(LR_poiSN_vs_CP_df$receptor)),]
+
+###
+### adjacency table 
+###
+
+celltypes <- LR_poiSN_vs_CP_df$cell_type
+names(celltypes) <- LR_poiSN_vs_CP_df$receptor
+
+LR_mat.poi.sn <- with(LR_poiSN_vs_CP_df , table(ligand,receptor))
+
+print(LR_mat.poi.sn)
+
+matched_ids <- match( LR_poiSN_vs_CP_df$receptor, colnames(LR_mat.poi.sn) )
+#> change order of columns :
+LR_mat.poi.sn <- LR_mat.poi.sn[,matched_ids]
+
+
+### groups 
+
+groups.poi.sn <- structure( c( rep("Ligands", nrow(LR_mat.poi.sn)), celltypes), 
+                              names = unlist(dimnames(LR_mat.poi.sn)) )
+
+groups_df.poi.sn <- data.frame( "groups" = groups.poi.sn )
+print(groups_df.poi.sn)
+
+groups_df.poi.sn <- groups_df.poi.sn %>% 
+                    mutate("grid_colour"= c(rep("firebrick3", length(which(groups == "CellPellet" ))), 
+                                            rep("mediumpurple3",length(which(groups == "Ligands" )))))   
+                                                 
+print(groups_df.poi.sn)
+
+### grid color 
+
+grid_col.poi.sn <- groups_df.poi.sn$grid_colour
+names(grid_col.poi.sn) <- rownames(groups_df.poi.sn)
+
+
+```
+
+Circos Plot 
+
+(LR_poiSN_vs_CP_df <- mini_nn_LR)
+
+```{r circos_with_poi_Ligands_vs_All_CP}
+
+circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
+           track.margin = c(0.01, 0.01)) # adjust bottom and top margin
+
+
+col_values.poi.sn <- c(round(min(LR_poiSN_vs_CP_df$interact_value),1), 
+                round(max(LR_poiSN_vs_CP_df$interact_value),1) )
+
+col_fun.poi.sn <- circlize::colorRamp2(col_values.poi.sn, c("blue", "red"))
+col_fun.poi.sn
+
+chordDiagram(LR_poiSN_vs_CP_df,
+             transparency=0.5,
+             big.gap = 10,
+             group = groups.poi.sn,
+             grid.col = grid_col.poi.sn,        #only for small-genes-boxes colour
+             annotationTrack = "grid",
+             annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             link.target.prop = TRUE,
+             directional=1,         #shows little bars on Ligands showing to which R is connected
+             preAllocateTracks = list(
+                                track.height = mm_h(3),
+                                track.margin = c(mm_h(3),0)),
+             col=function(x) col_fun(x)) 
+            
+
+#### Add Legend and Colour intensity according to Interaction Value of L-Rs
+
+#> Doc : https://jokergoo.github.io/ComplexHeatmap-reference/book/legends.html
+
+
+## Add a Legend for the color-variability of chords 
+lgd <- ComplexHeatmap::Legend(at=col_values.poi.sn,
+                              col_fun = col_fun, 
+                              title = "Interaction")
+
+ComplexHeatmap::draw(lgd, x = unit(1, "cm"), y = unit(0, "cm"),just=c("left","bottom") )
+
+cat("\n\n\n~~>Legend shows colour-code of chords according to Interaction Value: blue = min, red = max ")
+
+
+##> Add Receptors_Names in "Track"=2 ( internal circle)
+circos.track(track.index=2, panel.fun = function(x,y) { 
+               sector.index = get.cell.meta.data("sector.index")
+               xlim = get.cell.meta.data("xlim")
+               ylim = get.cell.meta.data("ylim")
+               circos.text(mean(xlim), mean(ylim), 
+                           sector.index, cex = 0.6,
+                           niceFacing = TRUE,col = "white")
+            }, bg.border = NA )
+
+
+#### 2nd Layer of Labels :: Cell-types => Cell Pellet (Source of genes )
+
+
+# Ligands layer
+highlight.sector(LR_poiSN_vs_CP_df$ligand,
+                 track.index = 1, 
+                 col = unique(groups_df.poi.sn$grid_colour)[1], 
+                 text = unique(groups_df.poi.sn$groups)[1], 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+
+# CellPellet
+highlight.sector(LR_poiSN_vs_CP_df$receptor[which(LR_poiSN_vs_CP_df$cell_type == unique(groups_df.poi.sn$groups)[2])], #cell_group[1]
+                 track.index = 1, 
+                 col = unique(groups_df.poi.sn$grid_colour)[2], 
+                 text = unique(groups_df.poi.sn$groups)[2] , 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+```
+
+### Create ChordDiagram D' : only with POI-FAPs(in_vitro) vs sc.MuSC (DeMicheli) [ 15/10/24 ]
+
+```{r nichenet_LR_poi_FAPs}
+
+# poi_faps_vs_musc <- paste0(out_dir,"../POI_FAPs_invitro/NicheNet_POI-FAPs_inVitro=Ligands_vs_scDeMicheli_MuSC=Receptors.xlsx")
+
+## or, for Upregulated POI-FAPs:
+poi_faps_vs_musc <- paste0(out_dir,"../POI_FAPs_invitro/",
+                           "NicheNet_Upregul_POI-FAPs_inVitro=Ligands_vs_scDeMicheli_MuSC=Receptors.xlsx")
+
+glue::glue("\nFile to be read : {basename(poi_faps_vs_musc)}")
+
+LR_poi_faps_df <- extract_LR_for_circos(poi_faps_vs_musc, celltype="MuSC", cutoff = 0.2) 
+LR_poi_faps_df %>% head
+LR_poi_faps_df %>% dim
+
+```
+
+
+```{r prepare_LR_mat_FAPs-MuSC}
+
+## remove Receptors that are also Ligands. Interferes with colouring to a protein in Circos.
+
+to_rmv <- which( LR_poi_faps_df$receptor %in% LR_poi_faps_df$ligand )
+#show line with receptor to rmv:
+print(LR_poi_faps_df[to_rmv,])
+# show other lines with ligand same as the receptor-2-remove:
+LR_poi_faps_df[ which(LR_poi_faps_df$ligand == LR_poi_faps_df$receptor[to_rmv]),]
+
+
+if (length(to_rmv)>0) {
+  LR_poi_faps_df <- LR_poi_faps_df[-to_rmv,]
+}
+
+## remove Duplicate Receptors, as it is confounding when making Circos, to have them in different positions! 
+## One Receptor from 2 Ligands is not possible,due to duplicate col-name of the table !
+LR_poi_faps_df  <- LR_poi_faps_df[-which(duplicated(LR_poi_faps_df$receptor)),]
+
+
+###
+### adjacency table 
+###
+
+celltypes <- LR_poi_faps_df$cell_type
+names(celltypes) <- LR_poi_faps_df$receptor
+
+LR_mat.poi.faps <- with(LR_poi_faps_df , table(ligand,receptor))
+
+print(LR_mat.poi.faps)
+
+matched_ids <- match( LR_poi_faps_df$receptor, colnames(LR_mat.poi.faps))
+#> change order of columns :
+LR_mat.poi.faps <- LR_mat.poi.faps[,matched_ids]
+
+
+###
+### Groups 
+###
+
+##> 'groups' is a structure (vector) with protein-names and their group(ligand,receptor,celltype)
+##> based on this we ll assign the colours 
+##> rep("Upregul_FAPs" or "Ligands_FAPs",nrow(LR_mat.poi.faps) )
+
+groups.poi.faps <- structure(c(rep("Upregul_FAPs", nrow(LR_mat.poi.faps)), celltypes), 
+                              names = unlist(dimnames(LR_mat.poi.faps)))
+
+
+groups_df.poi.faps <- data.frame( "groups" = groups.poi.faps )
+print(groups_df.poi.faps)
+
+groups_df.poi.faps <- groups_df.poi.faps %>% 
+                      mutate("grid_colour"= c( rep("mediumpurple3",length(which(groups =="Upregul_FAPs"))),
+                                               rep("firebrick3", length(which(groups == "MuSC")))))   
+                                                 
+print(groups_df.poi.faps)
+
+length(unlist(dimnames(LR_mat.poi.faps))) == length(groups_df.poi.faps$grid_colour)
+
+
+### grid color 
+
+grid_col.poi.faps <- groups_df.poi.faps$grid_colour
+names(grid_col.poi.faps) <- rownames(groups_df.poi.faps)
+
+grid_col.poi.faps
+
+```
+
+Circos Plot 
+
+(LR_poi_faps_df <- mini_nn_LR)
+
+```{r circos_with_poi_FAPs_vs_MuSC }
+
+#circos.clear()
+circos.par(canvas.ylim=c(-1, 1), # edit  canvas size 
+           track.margin = c(0.01, 0.01)) # adjust bottom and top margin
+
+
+col_values.poi.faps <- c(round(min(LR_poi_faps_df$interact_value),1), 
+                         round(max(LR_poi_faps_df$interact_value),1) )
+
+col_fun.poi.faps <- circlize::colorRamp2(col_values.poi.faps, c("blue", "red"))
+
+chordDiagram(LR_poi_faps_df,
+             transparency=0.5,
+             big.gap = 10,
+             group = groups.poi.faps,
+             grid.col = grid_col.poi.faps,         # only for small-genes-boxes colour
+             annotationTrack = "grid",
+             annotationTrackHeight = c(0.08,0.08), ##--> gives thickness on bars
+             link.target.prop = TRUE,
+             directional=1,         #shows little bars on Ligands showing to which R is connected
+             preAllocateTracks = list(
+                                track.height = mm_h(3),
+                                track.margin = c(mm_h(3),0)),
+             col=function(x) col_fun(x)) 
+            
+
+#### Add Legend and Colour intensity according to Interaction Value of L-Rs
+
+#> Doc : https://jokergoo.github.io/ComplexHeatmap-reference/book/legends.html
+
+
+## Add a Legend for the color-variability of chords 
+lgd <- ComplexHeatmap::Legend(at=col_values.poi.faps,
+                              col_fun = col_fun, 
+                              title = "Interaction")
+
+ComplexHeatmap::draw(lgd, x = unit(1, "cm"), y = unit(0, "cm"), just=c("left","bottom"))
+
+cat("\n\n\n~~>Legend shows colour-code of chords according to Interaction Value: blue = min, red = max ")
+
+
+##> Add Receptors_Names in "Track"=2 ( internal circle)
+circos.track(track.index=2, panel.fun = function(x,y) { 
+               sector.index = get.cell.meta.data("sector.index")
+               xlim = get.cell.meta.data("xlim")
+               ylim = get.cell.meta.data("ylim")
+               circos.text(mean(xlim), mean(ylim), 
+                           sector.index, cex = 0.5,
+                           niceFacing = TRUE,col = "white")
+            }, bg.border = NA )
+
+
+#### 2nd Layer of Labels :: Cell-types => Cell Pellet (Source of genes )
+
+
+# Ligands layer
+highlight.sector(LR_poi_faps_df$ligand,
+                 track.index = 1, 
+                 col = unique(groups_df.poi.faps$grid_colour)[1], 
+                 text = unique(groups_df.poi.faps$groups)[1], 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+
+# MuSC layer
+highlight.sector(LR_poi_faps_df$receptor[which(LR_poi_faps_df$cell_type == unique(groups_df.poi.faps$groups)[2])], #cell_group[1]
+                 track.index = 1, 
+                 col = unique(groups_df.poi.faps$grid_colour)[2], 
+                 text = unique(groups_df.poi.faps$groups)[2] , 
+                 cex = 0.8, lwd = 1.5, text.col = "white", 
+                 niceFacing = TRUE )
+
+
+#circos.clear()
 
 ```
 
